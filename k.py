@@ -74,9 +74,69 @@ def berechnen():
         st.session_state.ausdruck = "Fehler"
 
 
+# ---------- Dunkles Design ----------
+
+st.markdown(
+    """
+    <style>
+    /* Ganzer Hintergrund */
+    .stApp {
+        background-color: #121212;
+    }
+
+    /* Anzeige-Feld */
+    div[data-testid="stTextInput"] input {
+        background-color: #1e1e1e !important;
+        color: #ffffff !important;
+        font-size: 30px !important;
+        text-align: right !important;
+        border-radius: 10px !important;
+        border: 1px solid #333 !important;
+        height: 55px !important;
+    }
+
+    /* Alle normalen Tasten (Zahlen + Operatoren): dunkelgrau, weiße Schrift */
+    div[data-testid="stButton"] button {
+        width: 100%;
+        height: 55px;
+        font-size: 20px;
+        font-weight: bold;
+        border-radius: 10px;
+        border: none;
+        background-color: #2c2c2c;
+        color: #ffffff !important;
+    }
+    div[data-testid="stButton"] button:hover {
+        background-color: #3a3a3a;
+        color: #ffffff !important;
+        border: none;
+    }
+
+    /* "=" Taste (type=primary): orange hervorgehoben */
+    div[data-testid="stButton"] button[kind="primary"] {
+        background-color: #ff9500;
+        color: #ffffff !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        background-color: #ffab33;
+    }
+
+    /* Löschtaste "C": rot, über eindeutigen Key angesprochen */
+    .st-key-btn_loeschen button {
+        background-color: #e53935 !important;
+        color: #ffffff !important;
+    }
+    .st-key-btn_loeschen button:hover {
+        background-color: #ff5c5c !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ---------- Oberfläche ----------
 
-st.title("🧮 Taschenrechner")
+st.markdown("<h1 style='text-align:center; color:white;'>🧮 Taschenrechner</h1>", unsafe_allow_html=True)
 
 st.text_input(
     "Anzeige",
@@ -97,7 +157,7 @@ for r_index, reihe in enumerate(reihen):
     spalten = st.columns(4)
     for s_index, text in enumerate(reihe):
         if text == "C":
-            spalten[s_index].button(text, on_click=loeschen, key=f"btn_{r_index}_{s_index}")
+            spalten[s_index].button(text, on_click=loeschen, key="btn_loeschen")
         elif text == "⌫":
             spalten[s_index].button(text, on_click=rueckgaengig, key=f"btn_{r_index}_{s_index}")
         else:
