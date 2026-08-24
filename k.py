@@ -1,7 +1,7 @@
 import streamlit as st
-import re
 import ast
 import operator
+import re
 
 st.set_page_config(page_title="Taschenrechner", page_icon="🧮", layout="centered")
 
@@ -25,9 +25,7 @@ def sicher_auswerten(knoten):
         op_typ = type(knoten.op)
         if op_typ not in OPERATOREN:
             raise ValueError("Operator nicht erlaubt")
-        links = sicher_auswerten(knoten.left)
-        rechts = sicher_auswerten(knoten.right)
-        return OPERATOREN[op_typ](links, rechts)
+        return OPERATOREN[op_typ](sicher_auswerten(knoten.left), sicher_auswerten(knoten.right))
     if isinstance(knoten, ast.UnaryOp):
         op_typ = type(knoten.op)
         if op_typ not in OPERATOREN:
@@ -48,103 +46,46 @@ def berechne_ausdruck(text):
 
 if "ausdruck" not in st.session_state:
     st.session_state.ausdruck = ""
-if "verlauf" not in st.session_state:
-    st.session_state.verlauf = []
-if "fehler" not in st.session_state:
-    st.session_state.fehler = False
 
 
-def taste_gedrueckt(zeichen):
-    if st.session_state.fehler:
-        st.session_state.ausdruck = ""
-        st.session_state.fehler = False
+def taste(zeichen):
     st.session_state.ausdruck += zeichen
 
 
 def loeschen():
     st.session_state.ausdruck = ""
-    st.session_state.fehler = False
 
 
 def rueckgaengig():
     st.session_state.ausdruck = st.session_state.ausdruck[:-1]
-    st.session_state.fehler = False
 
 
 def berechnen():
-    ausdruck = st.session_state.ausdruck
-    if not ausdruck:
+    if not st.session_state.ausdruck:
         return
     try:
-        ergebnis = berechne_ausdruck(ausdruck)
+        ergebnis = berechne_ausdruck(st.session_state.ausdruck)
         if isinstance(ergebnis, float) and ergebnis.is_integer():
             ergebnis = int(ergebnis)
-        st.session_state.verlauf.insert(0, f"{ausdruck} = {ergebnis}")
-        st.session_state.verlauf = st.session_state.verlauf[:8]
         st.session_state.ausdruck = str(ergebnis)
-        st.session_state.fehler = False
     except ZeroDivisionError:
-        st.session_state.ausdruck = "Fehler: Division durch 0"
-        st.session_state.fehler = True
+        st.session_state.ausdruck = "Fehler: /0"
     except Exception:
-        st.session_state.ausdruck = "Fehler: ungültiger Ausdruck"
-        st.session_state.fehler = True
+        st.session_state.ausdruck = "Fehler"
 
 
-# ---------- Eigenes CSS ----------
+# ---------- Oberfläche ----------
 
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-color: #121212;
-    }
-    div[data-testid="stTextInput"] input {
-        background-color: #1e1e1e;
-        color: #ffffff;
-        font-size: 32px;
-        text-align: right;
-        border-radius: 10px;
-        border: 1px solid #333;
-        height: 60px;
-    }
-    div.stButton > button {
-        width: 100%;
-        height: 60px;
-        font-size: 20px;
-        border-radius: 10px;
-        border: none;
-        background-color: #2c2c2c;
-        color: white;
-        transition: 0.15s;
-    }
-    div.stButton > button:hover {
-        background-color: #3a3a3a;
-        color: white;
-        border: none;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ---------- Titel ----------
-
-st.markdown("<h1 style='text-align:center; color:white;'>🧮 Taschenrechner</h1>", unsafe_allow_html=True)
-
-# ---------- Anzeige ----------
+st.title("🧮 Taschenrechner")
 
 st.text_input(
     "Anzeige",
     value=st.session_state.ausdruck if st.session_state.ausdruck else "0",
-    key="anzeige_feld",
     disabled=True,
     label_visibility="collapsed",
 )
 
-# ---------- Tasten-Layout ----------
-
-tasten = [
+reihen = [
     ["C", "⌫", "%", "/"],
     ["7", "8", "9", "*"],
     ["4", "5", "6", "-"],
@@ -152,28 +93,14 @@ tasten = [
     ["(", "0", ")", ","],
 ]
 
-for reihe in tasten:
+for r_index, reihe in enumerate(reihen):
     spalten = st.columns(4)
-    for spalte, text in zip(spalten, reihe):
-        with spalte:
-            if text == "C":
-                st.button(text, on_click=loeschen, key=f"btn_{text}")
-            elif text == "⌫":
-                st.button(text, on_click=rueckgaengig, key=f"btn_{text}")
-            else:
-                st.button(text, on_click=taste_gedrueckt, args=(text,), key=f"btn_{text}")
+    for s_index, text in enumerate(reihe):
+        if text == "C":
+            spalten[s_index].button(text, on_click=loeschen, key=f"btn_{r_index}_{s_index}")
+        elif text == "⌫":
+            spalten[s_index].button(text, on_click=rueckgaengig, key=f"btn_{r_index}_{s_index}")
+        else:
+            spalten[s_index].button(text, on_click=taste, args=(text,), key=f"btn_{r_index}_{s_index}")
 
-# "=" als eigene, breite Taste
 st.button("=", on_click=berechnen, use_container_width=True, type="primary", key="btn_gleich")
-
-# ---------- Verlauf ----------
-
-with st.expander("📜 Verlauf", expanded=False):
-    if st.session_state.verlauf:
-        for eintrag in st.session_state.verlauf:
-            st.markdown(f"<div style='color:#ccc;'>{eintrag}</div>", unsafe_allow_html=True)
-        if st.button("Verlauf löschen"):
-            st.session_state.verlauf = []
-            st.rerun()
-    else:
-        st.markdown("<div style='color:#777;'>Noch keine Berechnungen</div>", unsafe_allow_html=True)
