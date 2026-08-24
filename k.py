@@ -1,139 +1,179 @@
-import tkinter as tk
+import streamlit as st
+import re
+import ast
+import operator
 
-# ---------- Funktionen ----------
+st.set_page_config(page_title="Taschenrechner", page_icon="🧮", layout="centered")
+
+# ---------- Sichere Berechnung (ohne eval) ----------
+
+OPERATOREN = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+}
+
+
+def sicher_auswerten(knoten):
+    if isinstance(knoten, ast.Constant):
+        return knoten.value
+    if isinstance(knoten, ast.BinOp):
+        op_typ = type(knoten.op)
+        if op_typ not in OPERATOREN:
+            raise ValueError("Operator nicht erlaubt")
+        links = sicher_auswerten(knoten.left)
+        rechts = sicher_auswerten(knoten.right)
+        return OPERATOREN[op_typ](links, rechts)
+    if isinstance(knoten, ast.UnaryOp):
+        op_typ = type(knoten.op)
+        if op_typ not in OPERATOREN:
+            raise ValueError("Operator nicht erlaubt")
+        return OPERATOREN[op_typ](sicher_auswerten(knoten.operand))
+    raise ValueError("Ungültiger Ausdruck")
+
+
+def berechne_ausdruck(text):
+    text = text.replace(",", ".").replace("%", "/100")
+    if not re.fullmatch(r"[0-9\.\+\-\*/\(\)\s]+", text):
+        raise ValueError("Ungültige Zeichen")
+    baum = ast.parse(text, mode="eval")
+    return sicher_auswerten(baum.body)
+
+
+# ---------- Session State ----------
+
+if "ausdruck" not in st.session_state:
+    st.session_state.ausdruck = ""
+if "verlauf" not in st.session_state:
+    st.session_state.verlauf = []
+if "fehler" not in st.session_state:
+    st.session_state.fehler = False
+
 
 def taste_gedrueckt(zeichen):
-    """Fügt das gedrückte Zeichen an die Anzeige an."""
-    aktueller_text = anzeige.get()
-    anzeige.delete(0, tk.END)
-    anzeige.insert(0, aktueller_text + zeichen)
+    if st.session_state.fehler:
+        st.session_state.ausdruck = ""
+        st.session_state.fehler = False
+    st.session_state.ausdruck += zeichen
 
 
 def loeschen():
-    """Leert die Anzeige komplett."""
-    anzeige.delete(0, tk.END)
+    st.session_state.ausdruck = ""
+    st.session_state.fehler = False
 
 
 def rueckgaengig():
-    """Löscht das letzte Zeichen."""
-    aktueller_text = anzeige.get()
-    anzeige.delete(0, tk.END)
-    anzeige.insert(0, aktueller_text[:-1])
+    st.session_state.ausdruck = st.session_state.ausdruck[:-1]
+    st.session_state.fehler = False
 
 
 def berechnen():
-    """Wertet den eingegebenen Ausdruck aus."""
-    ausdruck = anzeige.get()
+    ausdruck = st.session_state.ausdruck
+    if not ausdruck:
+        return
     try:
-        # Komma durch Punkt ersetzen, falls jemand mit Komma rechnet
-        ausdruck = ausdruck.replace(",", ".")
-        ergebnis = eval(ausdruck)
-        anzeige.delete(0, tk.END)
-        anzeige.insert(0, str(ergebnis))
+        ergebnis = berechne_ausdruck(ausdruck)
+        if isinstance(ergebnis, float) and ergebnis.is_integer():
+            ergebnis = int(ergebnis)
+        st.session_state.verlauf.insert(0, f"{ausdruck} = {ergebnis}")
+        st.session_state.verlauf = st.session_state.verlauf[:8]
+        st.session_state.ausdruck = str(ergebnis)
+        st.session_state.fehler = False
     except ZeroDivisionError:
-        anzeige.delete(0, tk.END)
-        anzeige.insert(0, "Fehler: /0")
+        st.session_state.ausdruck = "Fehler: Division durch 0"
+        st.session_state.fehler = True
     except Exception:
-        anzeige.delete(0, tk.END)
-        anzeige.insert(0, "Fehler")
+        st.session_state.ausdruck = "Fehler: ungültiger Ausdruck"
+        st.session_state.fehler = True
 
 
-# ---------- Fenster einrichten ----------
+# ---------- Eigenes CSS ----------
 
-fenster = tk.Tk()
-fenster.title("Taschenrechner")
-fenster.resizable(False, False)
-fenster.configure(bg="#2b2b2b")
+st.markdown(
+    """
+    <style>
+    .stApp {
+        background-color: #121212;
+    }
+    div[data-testid="stTextInput"] input {
+        background-color: #1e1e1e;
+        color: #ffffff;
+        font-size: 32px;
+        text-align: right;
+        border-radius: 10px;
+        border: 1px solid #333;
+        height: 60px;
+    }
+    div.stButton > button {
+        width: 100%;
+        height: 60px;
+        font-size: 20px;
+        border-radius: 10px;
+        border: none;
+        background-color: #2c2c2c;
+        color: white;
+        transition: 0.15s;
+    }
+    div.stButton > button:hover {
+        background-color: #3a3a3a;
+        color: white;
+        border: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------- Titel ----------
+
+st.markdown("<h1 style='text-align:center; color:white;'>🧮 Taschenrechner</h1>", unsafe_allow_html=True)
 
 # ---------- Anzeige ----------
 
-anzeige = tk.Entry(
-    fenster,
-    font=("Arial", 24),
-    justify="right",
-    bd=0,
-    bg="#1e1e1e",
-    fg="white",
-    insertbackground="white",
+st.text_input(
+    "Anzeige",
+    value=st.session_state.ausdruck if st.session_state.ausdruck else "0",
+    key="anzeige_feld",
+    disabled=True,
+    label_visibility="collapsed",
 )
-anzeige.grid(row=0, column=0, columnspan=4, ipady=20, sticky="we", padx=10, pady=10)
 
 # ---------- Tasten-Layout ----------
 
 tasten = [
-    ("C", 1, 0), ("⌫", 1, 1), ("%", 1, 2), ("/", 1, 3),
-    ("7", 2, 0), ("8", 2, 1), ("9", 2, 2), ("*", 2, 3),
-    ("4", 3, 0), ("5", 3, 1), ("6", 3, 2), ("-", 3, 3),
-    ("1", 4, 0), ("2", 4, 1), ("3", 4, 2), ("+", 4, 3),
-    ("0", 5, 0), (",", 5, 1), ("=", 5, 2, 2),  # "=" nimmt 2 Spalten ein
+    ["C", "⌫", "%", "/"],
+    ["7", "8", "9", "*"],
+    ["4", "5", "6", "-"],
+    ["1", "2", "3", "+"],
+    ["(", "0", ")", ","],
 ]
 
-farbe_zahl = "#3c3c3c"
-farbe_operator = "#ff9500"
-farbe_funktion = "#a5a5a5"
+for reihe in tasten:
+    spalten = st.columns(4)
+    for spalte, text in zip(spalten, reihe):
+        with spalte:
+            if text == "C":
+                st.button(text, on_click=loeschen, key=f"btn_{text}")
+            elif text == "⌫":
+                st.button(text, on_click=rueckgaengig, key=f"btn_{text}")
+            else:
+                st.button(text, on_click=taste_gedrueckt, args=(text,), key=f"btn_{text}")
 
-for taste in tasten:
-    text = taste[0]
-    zeile = taste[1]
-    spalte = taste[2]
-    spannweite = taste[3] if len(taste) > 3 else 1
+# "=" als eigene, breite Taste
+st.button("=", on_click=berechnen, use_container_width=True, type="primary", key="btn_gleich")
 
-    if text == "C":
-        befehl = loeschen
-        farbe = farbe_funktion
-    elif text == "⌫":
-        befehl = rueckgaengig
-        farbe = farbe_funktion
-    elif text == "=":
-        befehl = berechnen
-        farbe = farbe_operator
-    elif text in ("+", "-", "*", "/", "%"):
-        befehl = lambda z=text: taste_gedrueckt(z)
-        farbe = farbe_operator
+# ---------- Verlauf ----------
+
+with st.expander("📜 Verlauf", expanded=False):
+    if st.session_state.verlauf:
+        for eintrag in st.session_state.verlauf:
+            st.markdown(f"<div style='color:#ccc;'>{eintrag}</div>", unsafe_allow_html=True)
+        if st.button("Verlauf löschen"):
+            st.session_state.verlauf = []
+            st.rerun()
     else:
-        befehl = lambda z=text: taste_gedrueckt(z)
-        farbe = farbe_zahl
-
-    button = tk.Button(
-        fenster,
-        text=text,
-        font=("Arial", 18),
-        bg=farbe,
-        fg="white",
-        bd=0,
-        activebackground="#555555",
-        activeforeground="white",
-        command=befehl,
-    )
-    button.grid(
-        row=zeile,
-        column=spalte,
-        columnspan=spannweite,
-        sticky="we",
-        padx=5,
-        pady=5,
-        ipady=10,
-    )
-
-# Spalten gleichmäßig verteilen
-for i in range(4):
-    fenster.grid_columnconfigure(i, weight=1)
-
-# ---------- Tastatur-Unterstützung ----------
-
-def taste_gedrueckt_event(event):
-    zeichen = event.char
-    if zeichen in "0123456789+-*/.,%":
-        taste_gedrueckt(zeichen)
-    elif event.keysym == "Return":
-        berechnen()
-    elif event.keysym == "BackSpace":
-        rueckgaengig()
-    elif event.keysym == "Escape":
-        loeschen()
-
-fenster.bind("<Key>", taste_gedrueckt_event)
-
-# ---------- Hauptschleife ----------
-
-fenster.mainloop()
+        st.markdown("<div style='color:#777;'>Noch keine Berechnungen</div>", unsafe_allow_html=True)
