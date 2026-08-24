@@ -4,20 +4,21 @@ import operator
 import re
 
 # ============================================================
-# SEITE
+# KONFIGURATION
 # ============================================================
 
 st.set_page_config(
-    page_title="Taschenrechner",
+    page_title="Calculator",
     page_icon="🧮",
     layout="centered",
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================================
-# SICHERE BERECHNUNG
+# SICHERE MATHEMATISCHE BERECHNUNG
 # ============================================================
 
-OPERATOREN = {
+OPERATORS = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -28,119 +29,137 @@ OPERATOREN = {
 }
 
 
-def sicher_auswerten(knoten):
-    """Berechnet nur erlaubte mathematische AST-Ausdrücke."""
+def safe_eval(node):
+    """Sichere Auswertung eines mathematischen Ausdrucks."""
 
-    if isinstance(knoten, ast.Constant):
-        if isinstance(knoten.value, (int, float)):
-            return knoten.value
-        raise ValueError("Ungültige Zahl")
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, (int, float)):
+            return node.value
+        raise ValueError("Ungültiger Wert")
 
-    if isinstance(knoten, ast.BinOp):
-        op_typ = type(knoten.op)
+    if isinstance(node, ast.BinOp):
+        operator_type = type(node.op)
 
-        if op_typ not in OPERATOREN:
+        if operator_type not in OPERATORS:
             raise ValueError("Operator nicht erlaubt")
 
-        links = sicher_auswerten(knoten.left)
-        rechts = sicher_auswerten(knoten.right)
+        left = safe_eval(node.left)
+        right = safe_eval(node.right)
 
-        return OPERATOREN[op_typ](links, rechts)
+        return OPERATORS[operator_type](left, right)
 
-    if isinstance(knoten, ast.UnaryOp):
-        op_typ = type(knoten.op)
+    if isinstance(node, ast.UnaryOp):
+        operator_type = type(node.op)
 
-        if op_typ not in OPERATOREN:
+        if operator_type not in OPERATORS:
             raise ValueError("Operator nicht erlaubt")
 
-        return OPERATOREN[op_typ](
-            sicher_auswerten(knoten.operand)
+        return OPERATORS[operator_type](
+            safe_eval(node.operand)
         )
 
     raise ValueError("Ungültiger Ausdruck")
 
 
-def berechne_ausdruck(text):
-    """Wandelt den Ausdruck um und berechnet ihn."""
+def calculate(expression):
+    """Berechnet einen mathematischen Ausdruck."""
 
-    text = text.replace(",", ".")
-    text = text.replace("×", "*")
-    text = text.replace("÷", "/")
+    expression = expression.replace(",", ".")
+    expression = expression.replace("×", "*")
+    expression = expression.replace("÷", "/")
+    expression = expression.replace("−", "-")
 
-    # Prozent behandeln
-    text = re.sub(
+    # Prozent
+    expression = re.sub(
         r"(\d+(?:\.\d+)?)%",
         r"(\1/100)",
-        text
+        expression,
     )
 
     # Nur erlaubte Zeichen
     if not re.fullmatch(
         r"[0-9\.\+\-\*/\(\)\s]+",
-        text
+        expression,
     ):
-        raise ValueError("Ungültige Zeichen")
+        raise ValueError("Ungültige Eingabe")
 
-    baum = ast.parse(text, mode="eval")
+    tree = ast.parse(expression, mode="eval")
 
-    return sicher_auswerten(baum.body)
+    return safe_eval(tree.body)
 
 
 # ============================================================
 # SESSION STATE
 # ============================================================
 
-if "eingabe" not in st.session_state:
-    st.session_state.eingabe = ""
+if "display" not in st.session_state:
+    st.session_state.display = ""
+
+if "history" not in st.session_state:
+    st.session_state.history = []
 
 
-def taste(zeichen):
-    """Fügt eine Taste zur Anzeige hinzu."""
+# ============================================================
+# FUNKTIONEN
+# ============================================================
 
-    # Fehleranzeige löschen, wenn neue Eingabe beginnt
-    if st.session_state.eingabe.startswith("Fehler"):
-        st.session_state.eingabe = ""
+def add_to_display(value):
+    """Taste hinzufügen."""
 
-    st.session_state.eingabe += zeichen
+    if st.session_state.display.startswith("Fehler"):
+        st.session_state.display = ""
 
-
-def loeschen():
-    """Komplett löschen."""
-
-    st.session_state.eingabe = ""
+    st.session_state.display += value
 
 
-def rueckgaengig():
-    """Letztes Zeichen löschen."""
+def clear_display():
+    """Alles löschen."""
 
-    if st.session_state.eingabe.startswith("Fehler"):
-        st.session_state.eingabe = ""
+    st.session_state.display = ""
+
+
+def backspace():
+    """Letztes Zeichen entfernen."""
+
+    if st.session_state.display.startswith("Fehler"):
+        st.session_state.display = ""
     else:
-        st.session_state.eingabe = st.session_state.eingabe[:-1]
+        st.session_state.display = st.session_state.display[:-1]
 
 
-def berechnen():
-    """Ausdruck berechnen."""
+def calculate_result():
+    """Ergebnis berechnen."""
 
-    if not st.session_state.eingabe:
+    expression = st.session_state.display
+
+    if not expression:
         return
 
     try:
-        ergebnis = berechne_ausdruck(
-            st.session_state.eingabe
+        result = calculate(expression)
+
+        if isinstance(result, float):
+            if result.is_integer():
+                result = int(result)
+            else:
+                result = round(result, 10)
+
+        st.session_state.history.append(
+            f"{expression} = {result}"
         )
 
-        # 5.0 wird zu 5
-        if isinstance(ergebnis, float) and ergebnis.is_integer():
-            ergebnis = int(ergebnis)
+        # Nur die letzten 5 Berechnungen behalten
+        st.session_state.history = (
+            st.session_state.history[-5:]
+        )
 
-        st.session_state.eingabe = str(ergebnis)
+        st.session_state.display = str(result)
 
     except ZeroDivisionError:
-        st.session_state.eingabe = "Fehler: Division durch 0"
+        st.session_state.display = "Fehler"
 
     except Exception:
-        st.session_state.eingabe = "Fehler"
+        st.session_state.display = "Fehler"
 
 
 # ============================================================
@@ -151,73 +170,103 @@ st.markdown(
     """
     <style>
 
-    /* --------------------------------------------------------
-       HAUPTSEITE
-    -------------------------------------------------------- */
+    /* ========================================================
+       GESAMTE APP
+       ======================================================== */
 
     .stApp {
         background:
             radial-gradient(
-                circle at top,
-                #242424 0%,
-                #121212 45%,
-                #0b0b0b 100%
+                circle at 50% -10%,
+                #303030 0%,
+                #171717 35%,
+                #0b0b0b 75%
             );
 
-        color: white;
+        min-height: 100vh;
     }
 
-    /* Hauptcontainer etwas schmaler */
     .block-container {
-        max-width: 500px;
+        max-width: 520px;
         padding-top: 35px;
         padding-bottom: 40px;
     }
 
-
-    /* --------------------------------------------------------
-       TITEL
-    -------------------------------------------------------- */
-
-    .calculator-title {
-        text-align: center;
-        color: #ffffff;
-        font-size: 34px;
-        font-weight: 800;
-        margin-bottom: 8px;
-        letter-spacing: -1px;
+    /* Streamlit Header verstecken */
+    header {
+        visibility: hidden;
     }
 
-    .calculator-subtitle {
+    /* ========================================================
+       TITEL
+       ======================================================== */
+
+    .title {
         text-align: center;
-        color: #888888;
+
+        font-size: 36px;
+
+        font-weight: 800;
+
+        color: #ffffff;
+
+        letter-spacing: -1.5px;
+
+        margin-bottom: 4px;
+    }
+
+    .subtitle {
+        text-align: center;
+
+        color: #777777;
+
         font-size: 14px;
+
         margin-bottom: 25px;
     }
 
+    /* ========================================================
+       CALCULATOR CARD
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       ANZEIGE
-    -------------------------------------------------------- */
+    .calculator-card {
+        background: rgba(27, 27, 27, 0.92);
+
+        border: 1px solid rgba(255,255,255,0.06);
+
+        border-radius: 28px;
+
+        padding: 22px;
+
+        box-shadow:
+            0 25px 70px rgba(0,0,0,0.45),
+            inset 0 1px 0 rgba(255,255,255,0.03);
+    }
+
+    /* ========================================================
+       DISPLAY
+       ======================================================== */
 
     div[data-testid="stTextInput"] {
         margin-bottom: 18px;
     }
 
     div[data-testid="stTextInput"] input {
+        box-sizing: border-box !important;
+
         width: 100% !important;
 
-        background-color: #1b1b1b !important;
+        height: 105px !important;
+
+        background: #111111 !important;
 
         color: #ffffff !important;
 
-        border: 1px solid #333333 !important;
+        border: 1px solid #292929 !important;
 
-        border-radius: 18px !important;
+        border-radius: 20px !important;
 
-        height: 90px !important;
-
-        padding: 10px 20px !important;
+        padding: 15px 20px !important;
 
         font-size: 42px !important;
 
@@ -225,166 +274,168 @@ st.markdown(
 
         text-align: right !important;
 
-        box-shadow:
-            inset 0 2px 10px rgba(0,0,0,0.35),
-            0 8px 25px rgba(0,0,0,0.25);
+        outline: none !important;
 
-        transition: all 0.2s ease;
+        box-shadow:
+            inset 0 4px 15px rgba(0,0,0,0.45);
     }
 
     div[data-testid="stTextInput"] input:focus {
         border-color: #ff9500 !important;
 
         box-shadow:
-            0 0 0 2px rgba(255,149,0,0.15),
-            inset 0 2px 10px rgba(0,0,0,0.35);
+            0 0 0 2px rgba(255,149,0,0.10),
+            inset 0 4px 15px rgba(0,0,0,0.45) !important;
     }
 
+    /* ========================================================
+       BUTTONS
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       NORMALE TASTEN
-    -------------------------------------------------------- */
+    div[data-testid="column"] {
+        padding-left: 4px;
+        padding-right: 4px;
+    }
 
     div[data-testid="stButton"] button {
         width: 100%;
 
-        height: 76px;
+        height: 72px;
 
         border-radius: 18px;
 
-        border: 1px solid #383838;
-
-        background: linear-gradient(
-            145deg,
-            #303030,
-            #252525
-        );
+        background:
+            linear-gradient(
+                145deg,
+                #363636,
+                #282828
+            );
 
         color: #ffffff !important;
 
-        font-size: 29px !important;
+        border: 1px solid #414141;
+
+        font-size: 27px !important;
 
         font-weight: 700 !important;
 
         box-shadow:
-            0 5px 12px rgba(0,0,0,0.30),
+            0 5px 12px rgba(0,0,0,0.25),
             inset 0 1px 0 rgba(255,255,255,0.04);
 
         transition:
-            transform 0.08s ease,
-            background 0.15s ease,
-            box-shadow 0.15s ease;
+            all 0.12s ease;
 
-        margin-bottom: 10px;
+        margin-bottom: 9px;
     }
 
-
-    /* Hover */
-
     div[data-testid="stButton"] button:hover {
-        background: linear-gradient(
-            145deg,
-            #3b3b3b,
-            #303030
-        );
+        background:
+            linear-gradient(
+                145deg,
+                #444444,
+                #333333
+            );
 
-        color: #ffffff !important;
-
-        border-color: #4a4a4a;
+        border-color: #555555;
 
         transform: translateY(-2px);
 
         box-shadow:
-            0 8px 18px rgba(0,0,0,0.40);
+            0 8px 18px rgba(0,0,0,0.35);
     }
-
-
-    /* Beim Klicken */
 
     div[data-testid="stButton"] button:active {
-        transform: scale(0.96);
+        transform: scale(0.95);
     }
 
+    /* ========================================================
+       ROTE C TASTE
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       OPERATOR-TASTEN
-    -------------------------------------------------------- */
-
-    .operator button {
-        background: linear-gradient(
-            145deg,
-            #ff9f0a,
-            #e67e00
-        ) !important;
-
-        color: white !important;
+    div.st-key-clear_button button {
+        background:
+            linear-gradient(
+                145deg,
+                #ff5148,
+                #d62f2f
+            ) !important;
 
         border: none !important;
+
+        color: #ffffff !important;
+
+        box-shadow:
+            0 6px 18px rgba(255,69,58,0.22);
     }
 
-    .operator button:hover {
-        background: linear-gradient(
-            145deg,
-            #ffb340,
-            #f28b00
-        ) !important;
+    div.st-key-clear_button button:hover {
+        background:
+            linear-gradient(
+                145deg,
+                #ff6b63,
+                #e53935
+            ) !important;
+
+        box-shadow:
+            0 9px 24px rgba(255,69,58,0.35);
     }
 
+    /* ========================================================
+       OPERATOR BUTTONS
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       C - LÖSCHTASTE
-    -------------------------------------------------------- */
+    div.st-key-op_div button,
+    div.st-key-op_mul button,
+    div.st-key-op_sub button,
+    div.st-key-op_add button,
+    div.st-key-op_percent button {
 
-    .clear-button button {
-        background: linear-gradient(
-            145deg,
-            #ff453a,
-            #c62828
-        ) !important;
-
-        color: white !important;
+        background:
+            linear-gradient(
+                145deg,
+                #ff9f0a,
+                #e67e00
+            ) !important;
 
         border: none !important;
+
+        color: #ffffff !important;
+
+        box-shadow:
+            0 6px 16px rgba(255,149,0,0.18);
     }
 
-    .clear-button button:hover {
-        background: linear-gradient(
-            145deg,
-            #ff6258,
-            #e53935
-        ) !important;
+    div.st-key-op_div button:hover,
+    div.st-key-op_mul button:hover,
+    div.st-key-op_sub button:hover,
+    div.st-key-op_add button:hover,
+    div.st-key-op_percent button:hover {
+
+        background:
+            linear-gradient(
+                145deg,
+                #ffb340,
+                #f28b00
+            ) !important;
     }
 
+    /* ========================================================
+       GLEICH BUTTON
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       RÜCKGÄNGIG
-    -------------------------------------------------------- */
+    div.st-key-equals_button button {
 
-    .back-button button {
-        background: linear-gradient(
-            145deg,
-            #454545,
-            #333333
-        ) !important;
-    }
+        height: 76px !important;
 
+        background:
+            linear-gradient(
+                145deg,
+                #ff9f0a,
+                #e67e00
+            ) !important;
 
-    /* --------------------------------------------------------
-       GLEICH
-    -------------------------------------------------------- */
-
-    .equals-button button {
-        height: 78px !important;
-
-        border-radius: 18px !important;
-
-        background: linear-gradient(
-            145deg,
-            #ff9f0a,
-            #e67e00
-        ) !important;
-
-        color: white !important;
+        color: #ffffff !important;
 
         border: none !important;
 
@@ -393,43 +444,68 @@ st.markdown(
         font-weight: 800 !important;
 
         box-shadow:
-            0 6px 18px rgba(255,149,0,0.25);
+            0 8px 25px rgba(255,149,0,0.25);
     }
 
-    .equals-button button:hover {
-        background: linear-gradient(
-            145deg,
-            #ffb340,
-            #f28b00
-        ) !important;
+    div.st-key-equals_button button:hover {
+
+        background:
+            linear-gradient(
+                145deg,
+                #ffb340,
+                #f28b00
+            ) !important;
 
         box-shadow:
-            0 8px 24px rgba(255,149,0,0.35);
+            0 10px 30px rgba(255,149,0,0.35);
     }
 
+    /* ========================================================
+       HISTORY
+       ======================================================== */
 
-    /* --------------------------------------------------------
-       ABSTÄNDE
-    -------------------------------------------------------- */
+    .history-title {
+        color: #777777;
 
-    div[data-testid="column"] {
-        padding-left: 4px;
-        padding-right: 4px;
+        font-size: 12px;
+
+        text-transform: uppercase;
+
+        letter-spacing: 1px;
+
+        margin-top: 15px;
+
+        margin-bottom: 8px;
     }
 
+    .history-item {
+        background: #151515;
 
-    /* --------------------------------------------------------
+        color: #888888;
+
+        border-radius: 12px;
+
+        padding: 8px 12px;
+
+        margin-bottom: 5px;
+
+        font-size: 13px;
+
+        text-align: right;
+    }
+
+    /* ========================================================
        FOOTER
-    -------------------------------------------------------- */
+       ======================================================== */
 
     .footer {
         text-align: center;
 
-        color: #555555;
+        color: #4d4d4d;
 
         font-size: 12px;
 
-        margin-top: 22px;
+        margin-top: 18px;
     }
 
     </style>
@@ -439,31 +515,39 @@ st.markdown(
 
 
 # ============================================================
-# OBERFLÄCHE
+# TITEL
 # ============================================================
 
 st.markdown(
-    '<div class="calculator-title">🧮 Taschenrechner</div>',
+    '<div class="title">🧮 Calculator</div>',
     unsafe_allow_html=True
 )
 
 st.markdown(
-    '<div class="calculator-subtitle">'
-    'Einfach · Schnell · Sicher'
-    '</div>',
+    '<div class="subtitle">Simple · Fast · Powerful</div>',
     unsafe_allow_html=True
 )
 
 
 # ============================================================
-# ANZEIGE
+# CALCULATOR CARD START
+# ============================================================
+
+st.markdown(
+    '<div class="calculator-card">',
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
+# DISPLAY
 # ============================================================
 
 st.text_input(
-    "Anzeige",
-    key="eingabe",
-    label_visibility="collapsed",
+    "display",
+    key="display",
     placeholder="0",
+    label_visibility="collapsed",
 )
 
 
@@ -471,111 +555,187 @@ st.text_input(
 # TASTATUR
 # ============================================================
 
-reihen = [
-    ["C", "⌫", "%", "÷"],
-    ["7", "8", "9", "×"],
-    ["4", "5", "6", "−"],
-    ["1", "2", "3", "+"],
-    ["(", "0", ")", ","],
-]
+# Reihe 1
+cols = st.columns(4)
+
+with cols[0]:
+    st.button(
+        "C",
+        key="clear_button",
+        on_click=clear_display,
+        use_container_width=True,
+    )
+
+with cols[1]:
+    st.button(
+        "⌫",
+        key="back_button",
+        on_click=backspace,
+        use_container_width=True,
+    )
+
+with cols[2]:
+    st.button(
+        "%",
+        key="op_percent",
+        on_click=add_to_display,
+        args=("%",),
+        use_container_width=True,
+    )
+
+with cols[3]:
+    st.button(
+        "÷",
+        key="op_div",
+        on_click=add_to_display,
+        args=("÷",),
+        use_container_width=True,
+    )
 
 
-for r_index, reihe in enumerate(reihen):
+# Reihe 2
+cols = st.columns(4)
 
-    spalten = st.columns(4)
+for i, number in enumerate(["7", "8", "9"]):
+    with cols[i]:
+        st.button(
+            number,
+            key=f"num_{number}",
+            on_click=add_to_display,
+            args=(number,),
+            use_container_width=True,
+        )
 
-    for s_index, text in enumerate(reihe):
+with cols[3]:
+    st.button(
+        "×",
+        key="op_mul",
+        on_click=add_to_display,
+        args=("×",),
+        use_container_width=True,
+    )
 
-        with spalten[s_index]:
 
-            # C
-            if text == "C":
+# Reihe 3
+cols = st.columns(4)
 
-                st.markdown(
-                    '<div class="clear-button">',
-                    unsafe_allow_html=True
-                )
+for i, number in enumerate(["4", "5", "6"]):
+    with cols[i]:
+        st.button(
+            number,
+            key=f"num_{number}",
+            on_click=add_to_display,
+            args=(number,),
+            use_container_width=True,
+        )
 
-                st.button(
-                    "C",
-                    on_click=loeschen,
-                    key=f"clear_{r_index}_{s_index}",
-                    use_container_width=True,
-                )
+with cols[3]:
+    st.button(
+        "−",
+        key="op_sub",
+        on_click=add_to_display,
+        args=("−",),
+        use_container_width=True,
+    )
 
-                st.markdown(
-                    '</div>',
-                    unsafe_allow_html=True
-                )
 
-            # Rückgängig
-            elif text == "⌫":
+# Reihe 4
+cols = st.columns(4)
 
-                st.markdown(
-                    '<div class="back-button">',
-                    unsafe_allow_html=True
-                )
+for i, number in enumerate(["1", "2", "3"]):
+    with cols[i]:
+        st.button(
+            number,
+            key=f"num_{number}",
+            on_click=add_to_display,
+            args=(number,),
+            use_container_width=True,
+        )
 
-                st.button(
-                    "⌫",
-                    on_click=rueckgaengig,
-                    key=f"back_{r_index}_{s_index}",
-                    use_container_width=True,
-                )
+with cols[3]:
+    st.button(
+        "+",
+        key="op_add",
+        on_click=add_to_display,
+        args=("+",),
+        use_container_width=True,
+    )
 
-                st.markdown(
-                    '</div>',
-                    unsafe_allow_html=True
-                )
 
-            # Operatoren
-            elif text in ["÷", "×", "−", "+", "%"]:
+# Reihe 5
+cols = st.columns(4)
 
-                st.markdown(
-                    '<div class="operator">',
-                    unsafe_allow_html=True
-                )
+with cols[0]:
+    st.button(
+        "(",
+        key="left_parenthesis",
+        on_click=add_to_display,
+        args=("(",),
+        use_container_width=True,
+    )
 
-                st.button(
-                    text,
-                    on_click=taste,
-                    args=(text,),
-                    key=f"operator_{r_index}_{s_index}",
-                    use_container_width=True,
-                )
+with cols[1]:
+    st.button(
+        "0",
+        key="num_0",
+        on_click=add_to_display,
+        args=("0",),
+        use_container_width=True,
+    )
 
-                st.markdown(
-                    '</div>',
-                    unsafe_allow_html=True
-                )
+with cols[2]:
+    st.button(
+        ")",
+        key="right_parenthesis",
+        on_click=add_to_display,
+        args=(")",),
+        use_container_width=True,
+    )
 
-            # Normale Tasten
-            else:
-
-                st.button(
-                    text,
-                    on_click=taste,
-                    args=(text,),
-                    key=f"number_{r_index}_{s_index}",
-                    use_container_width=True,
-                )
+with cols[3]:
+    st.button(
+        ",",
+        key="decimal",
+        on_click=add_to_display,
+        args=(",",),
+        use_container_width=True,
+    )
 
 
 # ============================================================
 # GLEICH
 # ============================================================
 
-st.markdown(
-    '<div class="equals-button">',
-    unsafe_allow_html=True
-)
-
 st.button(
     "=",
-    on_click=berechnen,
-    key="equals",
+    key="equals_button",
+    on_click=calculate_result,
     use_container_width=True,
 )
+
+
+# ============================================================
+# HISTORY
+# ============================================================
+
+if st.session_state.history:
+
+    st.markdown(
+        '<div class="history-title">Letzte Berechnungen</div>',
+        unsafe_allow_html=True,
+    )
+
+    for item in reversed(st.session_state.history):
+
+        st.markdown(
+            f'<div class="history-item">{item}</div>',
+            unsafe_allow_html=True,
+        )
+
+
+# ============================================================
+# CARD ENDE
+# ============================================================
 
 st.markdown(
     '</div>',
@@ -588,6 +748,6 @@ st.markdown(
 # ============================================================
 
 st.markdown(
-    '<div class="footer">Python + Streamlit 🐍</div>',
+    '<div class="footer">Built with Python & Streamlit 🐍</div>',
     unsafe_allow_html=True
 )
